@@ -98,19 +98,24 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 
 			r.listeners[id].mutex.Lock()
 
-			r.listeners[id].handler(d)
+			handler := r.listeners[id].handler
+			if handler != nil {
+				handler(d)
+			}
+
 			d.Ack(false)
 
 			r.listeners[id].mutex.Unlock()
 			return false
 		}
 
-		r.logger.Debug(
+		var logger = r.logger.With(zap.String("Listener ID", id))
+		logger.Debug(
 			"Initializing listener",
-			zap.String("ID", id),
 		)
 
 		for d := range msgs {
+			logger.Debug("Received message")
 			handleFunc(d)
 		}
 	}()

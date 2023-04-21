@@ -3,6 +3,7 @@ package rabbitmqstore
 import (
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
 )
@@ -61,6 +62,7 @@ func New(options Options) (Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	logger = logger.With(zap.String("RabbitMQ Store ID", uuid.New().String()))
 
 	return &rabbitmqStore{
 		mutex:     sync.Mutex{},
