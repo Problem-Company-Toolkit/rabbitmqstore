@@ -156,4 +156,22 @@ var _ = Describe("Rabbitmqstore", func() {
 			Expect(listeners[listener2.GetID()]).To(Equal(listener2))
 		})
 	})
+
+	It("Declares exchanges", func() {
+		err = store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
+			{
+				Exchange: gofakeit.UUID(),
+			},
+			{
+				Exchange: gofakeit.UUID(),
+			},
+			{
+				Exchange: gofakeit.UUID(),
+			},
+			{
+				Exchange: gofakeit.UUID(),
+			},
+		})
+		Expect(err).ShouldNot(HaveOccurred())
+	})
 })

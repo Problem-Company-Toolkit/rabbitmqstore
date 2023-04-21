@@ -13,6 +13,9 @@ type Store interface {
 	CloseListener(id string)
 	GetListeners() map[string]Listener
 
+	// Declares a list of exchanges. Useful for initializing the exchanges that the store will use.
+	DeclareExchanges([]DeclareExchangeOpts) error
+
 	CloseAll() error
 	GetChannel() *amqp091.Channel
 }
@@ -91,4 +94,36 @@ func (r *rabbitmqStore) CloseListener(id string) {
 
 	r.listeners[id].mutex.Lock()
 	delete(r.listeners, id)
+}
+
+type DeclareExchangeOpts struct {
+	// Required.
+	Exchange string
+
+	// Defaults to topic.
+	Kind string
+}
+
+func (r *rabbitmqStore) DeclareExchanges(optsList []DeclareExchangeOpts) error {
+	for i := range optsList {
+		opt := optsList[i]
+
+		if opt.Kind == "" {
+			opt.Kind = "topic"
+		}
+
+		if err := r.channel.ExchangeDeclare(
+			opt.Exchange,
+			opt.Kind,
+			true,
+			false,
+			false,
+			false,
+			nil,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
