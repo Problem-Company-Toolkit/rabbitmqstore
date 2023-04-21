@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/rabbitmq/amqp091-go"
+	"go.uber.org/zap"
 )
 
 type ListenerHandlerFunc = func(amqp091.Delivery)
@@ -103,6 +104,12 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 			r.listeners[id].mutex.Unlock()
 			return false
 		}
+
+		r.logger.Debug(
+			"Initializing listener",
+			zap.String("ID", id),
+		)
+
 		for d := range msgs {
 			handleFunc(d)
 		}

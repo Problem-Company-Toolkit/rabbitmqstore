@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/rabbitmq/amqp091-go"
+	"go.uber.org/zap"
 )
 
 type MessageHandler func(amqp091.Delivery)
@@ -22,6 +23,7 @@ type Store interface {
 
 type rabbitmqStore struct {
 	mutex     sync.Mutex
+	logger    *zap.Logger
 	conn      *amqp091.Connection
 	channel   *amqp091.Channel
 	listeners map[string]*listener
@@ -55,8 +57,14 @@ func New(options Options) (Store, error) {
 		return nil, err
 	}
 
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		return nil, err
+	}
+
 	return &rabbitmqStore{
 		mutex:     sync.Mutex{},
+		logger:    logger,
 		conn:      conn,
 		channel:   channel,
 		listeners: make(map[string]*listener),
@@ -111,6 +119,12 @@ func (r *rabbitmqStore) DeclareExchanges(optsList []DeclareExchangeOpts) error {
 		if opt.Kind == "" {
 			opt.Kind = "topic"
 		}
+
+		r.logger.Debug(
+			"Declaring exchange",
+			zap.String("Exchange", opt.Exchange),
+			zap.String("Kind", opt.Kind),
+		)
 
 		if err := r.channel.ExchangeDeclare(
 			opt.Exchange,
