@@ -15,10 +15,8 @@
 To install the `rabbitmqstore` package, use the following command:
 
 ```
-go get -u github.com/yourusername/rabbitmqstore
+go get -u github.com/problem-company-toolkit/rabbitmqstore
 ```
-
-Replace `yourusername` with the appropriate username or organization.
 
 ## Usage
 
@@ -26,7 +24,7 @@ Replace `yourusername` with the appropriate username or organization.
 
 ```go
 import (
-	"github.com/yourusername/rabbitmqstore"
+	"github.com/problem-company-toolkit/rabbitmqstore"
 )
 ```
 
