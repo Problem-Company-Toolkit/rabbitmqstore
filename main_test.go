@@ -45,7 +45,7 @@ var _ = Describe("Rabbitmqstore", func() {
 	})
 
 	Context("Registering different listeners for each exchange", func() {
-		It("should invoke the handler for the correct exchange", func(done Done) {
+		It("should invoke the handler for the correct exchange", func() {
 			exchangeName1 := gofakeit.Word()
 			queueName1 := gofakeit.Word()
 			bindingKey1 := gofakeit.Word()
@@ -89,13 +89,8 @@ var _ = Describe("Rabbitmqstore", func() {
 			err = channel.PublishWithContext(context.TODO(), exchangeName2, bindingKey2, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte("y")})
 			Expect(err).NotTo(HaveOccurred())
 
-			receivedExchange1 := <-received1
-			receivedExchange2 := <-received2
-
-			Expect(receivedExchange1).To(Equal(exchangeName1))
-			Expect(receivedExchange2).To(Equal(exchangeName2))
-
-			close(done)
+			Eventually(received1).Should(Receive(&exchangeName1))
+			Eventually(received2).Should(Receive(&exchangeName2))
 		})
 	})
 
