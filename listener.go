@@ -17,14 +17,14 @@ type listener struct {
 	exchange     string
 	exchangeType string
 	queue        string
-	bindingKey   string
+	routingKey   string
 	handler      func(amqp091.Delivery)
 }
 
 type RegisterListenerOpts struct {
 	Exchange     string
 	Queue        string
-	BindingKey   string
+	RoutingKey   string
 	ExchangeType string
 	Handler      func(amqp091.Delivery)
 }
@@ -44,10 +44,10 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 
 	id := fmt.Sprintf(opts.Exchange)
 	if opts.Queue != "" {
-		id = fmt.Sprintf("%s-%s", id, opts.Queue)
+		id = fmt.Sprintf("%s/%s", id, opts.Queue)
 	}
-	if opts.BindingKey != "" {
-		id = fmt.Sprintf("%s-%s", id, opts.BindingKey)
+	if opts.RoutingKey != "" {
+		id = fmt.Sprintf("%s/%s", id, opts.RoutingKey)
 	}
 
 	if _, exists := r.listeners[id]; exists {
@@ -58,7 +58,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		opts.ExchangeType = "topic"
 	}
 
-	err := r.channel.ExchangeDeclare(opts.Exchange, opts.ExchangeType, true, false, false, false, nil)
+	err := r.channel.ExchangeDeclare(opts.Exchange, opts.ExchangeType, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		return nil, err
 	}
 
-	err = r.channel.QueueBind(q.Name, opts.BindingKey, opts.Exchange, false, nil)
+	err = r.channel.QueueBind(q.Name, opts.RoutingKey, opts.Exchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		id:           id,
 		exchange:     opts.Exchange,
 		exchangeType: opts.ExchangeType,
-		bindingKey:   opts.BindingKey,
+		routingKey:   opts.RoutingKey,
 		queue:        opts.Queue,
 		handler:      opts.Handler,
 	}
@@ -115,7 +115,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		)
 
 		for d := range msgs {
-			logger.Debug("Received message")
+			logger.Debug("Received message", zap.String("Message", string(d.Body)))
 			handleFunc(d)
 		}
 	}()
@@ -133,7 +133,7 @@ func (l *listener) GetQueueName() string {
 	return l.queue
 }
 func (l *listener) GetBindingKey() string {
-	return l.bindingKey
+	return l.routingKey
 }
 func (l *listener) GetID() string {
 	return l.id

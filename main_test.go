@@ -67,7 +67,7 @@ var _ = Describe("Rabbitmqstore", func() {
 			_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
 				Exchange:   exchangeName1,
 				Queue:      queueName1,
-				BindingKey: bindingKey1,
+				RoutingKey: bindingKey1,
 				Handler:    handler1,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -75,7 +75,7 @@ var _ = Describe("Rabbitmqstore", func() {
 			_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
 				Exchange:   exchangeName2,
 				Queue:      queueName2,
-				BindingKey: bindingKey2,
+				RoutingKey: bindingKey2,
 				Handler:    handler2,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -104,14 +104,14 @@ var _ = Describe("Rabbitmqstore", func() {
 			opts1 = rabbitmqstore.RegisterListenerOpts{
 				Exchange:   gofakeit.Word(),
 				Queue:      gofakeit.Word(),
-				BindingKey: gofakeit.Word(),
+				RoutingKey: gofakeit.Word(),
 				Handler:    func(d amqp091.Delivery) {},
 			}
 
 			opts2 = rabbitmqstore.RegisterListenerOpts{
 				Exchange:   gofakeit.Word(),
 				Queue:      gofakeit.Word(),
-				BindingKey: gofakeit.Word(),
+				RoutingKey: gofakeit.Word(),
 				Handler:    func(d amqp091.Delivery) {},
 			}
 
@@ -142,7 +142,7 @@ var _ = Describe("Rabbitmqstore", func() {
 			channel := store.GetChannel()
 			Expect(err).NotTo(HaveOccurred())
 
-			err = channel.PublishWithContext(context.TODO(), opts1.Exchange, opts1.BindingKey, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte("x")})
+			err = channel.PublishWithContext(context.TODO(), opts1.Exchange, opts1.RoutingKey, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte("x")})
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(received).Should(Receive(&expectedMessage))
