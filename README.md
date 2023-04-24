@@ -156,3 +156,7 @@ if err != nil {
 The package uses a default log level of `WarnLevel` and a default log encoding of `console`. You can also set the log level using the environment variable `RABBITMQSTORE_LOG_LEVEL`. Supported log levels are `debug`, `info`, `warn`, `fatal`, `panic`, and `dpanic`. If an invalid log level is provided, the default log level (`WarnLevel`) will be used.
 
 If the log level is set to `debug`, then `rabbitmqstore` will log all publish and received messages, including their contents.
+
+# Testing
+
+You can test this package by running the command `ginkgo` while inside the devcontainer.
