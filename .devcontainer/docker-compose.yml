@@ -22,17 +22,9 @@ services:
         VARIANT: "1.19-bullseye"
         # Options
         NODE_VERSION: "16"
-
-        DASHBOARD_PORT: ${DASHBOARD_PORT}
     env_file:
       # Ensure that the variables in .env match the same variables in devcontainer.json
       - .env
-    # Security Opt and cap_add allow for C++ based debuggers to work. 
-    # See `runArgs`: https://github.com/Microsoft/vscode-docs/blob/main/docs/remote/devcontainerjson-reference.md
-    #     security_opt:
-    #       - seccomp:unconfined
-    #     cap_add:
-    #       - SYS_PTRACE
 
     volumes:
       - ..:/workspace/rabbitmqstore:cached
@@ -40,20 +32,8 @@ services:
     # Overrides default command so things don't shut down after the process ends.
     command: sleep infinity
 
-    ports:
-      - ${DASHBOARD_PORT}:${DASHBOARD_PORT}
-
     networks:
       - rabbitmqstore
-    links:
-      - proxy
-      # - fakeserver
-      - keycloak
-    # Uncomment the next line to use a non-root user for all processes.
-    # user: vscode
-
-    # Use "forwardPorts" in **devcontainer.json** to forward an app port locally. 
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
 
   rabbitmq:
     image: rabbitmq:3.9.29-management-alpine
