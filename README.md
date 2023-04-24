@@ -107,7 +107,13 @@ if err != nil {
 
 ## Logging
 
-`rabbitmqstore` provides customizable logging capabilities to keep track of the events and errors occurring in the package. The logger can be configured using the `LoggerOpts` field in the `Options` struct, allowing you to set the desired log level, log encoding, and custom logger.
+`rabbitmqstore` provides customizable logging capabilities to keep track of the events and errors occurring in the package. There are two ways to configure the logger:
+
+1. Passing in your own preconfigured `*zap.Logger`.
+2. Using the `LoggerOpts` field in the `Options` struct, allowing you to set the desired log level, log encoding, and custom logger.
+3. Setting the log level using the environment variable `RABBITMQSTORE_LOG_LEVEL`.
+
+### Configuring logger using LoggerOpts
 
 ```go
 import (
@@ -153,7 +159,20 @@ if err != nil {
 }
 ```
 
-The package uses a default log level of `WarnLevel` and a default log encoding of `console`. You can also set the log level using the environment variable `RABBITMQSTORE_LOG_LEVEL`. Supported log levels are `debug`, `info`, `warn`, `fatal`, `panic`, and `dpanic`. If an invalid log level is provided, the default log level (`WarnLevel`) will be used.
+### Configuring logger using environment variable
+
+Set the log level using the environment variable `RABBITMQSTORE_LOG_LEVEL`. Supported log levels are:
+
+- `debug`
+- `info`
+- `warn`
+- `fatal`
+- `panic`
+- `dpanic`
+
+If an invalid log level is provided, the default log level (`WarnLevel`) will be used.
+
+The package uses a default log level of `WarnLevel` and a default log encoding of `console`.
 
 If the log level is set to `debug`, then `rabbitmqstore` will log all publish and received messages, including their contents.
 
