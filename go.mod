@@ -1,4 +1,4 @@
-module github.com/problem-company/rabbitmqstore
+module github.com/problem-company-toolkit/rabbitmqstore
 
 go 1.19
 

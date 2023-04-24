@@ -58,7 +58,7 @@ type LoggerOpts struct {
 
 const (
 	DEFAULT_LOG_LEVEL    = zapcore.WarnLevel
-	DEFAULT_LOG_ENCODING = "json"
+	DEFAULT_LOG_ENCODING = "console"
 )
 
 func New(opts Options) (Store, error) {

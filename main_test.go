@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/rabbitmq/amqp091-go"
 
-	"github.com/problem-company/rabbitmqstore"
+	"github.com/problem-company-toolkit/rabbitmqstore"
 )
 
 var _ = Describe("Rabbitmqstore", func() {
