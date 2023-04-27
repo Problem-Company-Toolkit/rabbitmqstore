@@ -24,4 +24,6 @@ RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add - \
 echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
 
 USER vscode
-RUN go install github.com/onsi/ginkgo/v2/ginkgo@fdb6c47
+RUN \
+  go install github.com/onsi/ginkgo/v2/ginkgo@v2.9.2 \
+  && go install github.com/golang/mock/mockgen@v1.6.0
