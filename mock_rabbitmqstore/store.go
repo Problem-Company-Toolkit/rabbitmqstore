@@ -9,7 +9,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	rabbitmqstore "github.com/problem-company-toolkit/rabbitmqstore"
-	amqp091_go "github.com/rabbitmq/amqp091-go"
+	amqp091 "github.com/rabbitmq/amqp091-go"
 )
 
 // MockStore is a mock of Store interface.
@@ -76,10 +76,10 @@ func (mr *MockStoreMockRecorder) DeclareExchanges(arg0 interface{}) *gomock.Call
 }
 
 // GetChannel mocks base method.
-func (m *MockStore) GetChannel() *amqp091_go.Channel {
+func (m *MockStore) GetChannel() *amqp091.Channel {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetChannel")
-	ret0, _ := ret[0].(*amqp091_go.Channel)
+	ret0, _ := ret[0].(*amqp091.Channel)
 	return ret0
 }
 
