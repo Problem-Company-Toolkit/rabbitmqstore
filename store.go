@@ -29,6 +29,12 @@ type Store interface {
 	// This is only for fringe cases where the basic Store functionality is not enough.
 	GetChannel() *amqp091.Channel
 
+	// Retrieves the channel. But you should most likely not use this directly.
+	// The channels is already managed by the store.
+	// This is only for fringe cases where the basic Store functionality is not enough.
+	// Avoid use it directly.
+	GetConnection() *amqp091.Connection
+
 	Publish(PublishOpts) error
 }
 
@@ -151,17 +157,25 @@ func New(opts Options) (Store, error) {
 	}
 	logger = logger.With(zap.String("RabbitMQ Store ID", uuid.New().String()))
 
-	return &rabbitmqStore{
+	store := &rabbitmqStore{
 		mutex:     sync.Mutex{},
 		logger:    logger,
 		conn:      conn,
 		channel:   channel,
 		listeners: make(map[string]*listener),
-	}, nil
+	}
+
+	go store.handleChannel()
+
+	return store, nil
 }
 
 func (r *rabbitmqStore) GetChannel() *amqp091.Channel {
 	return r.channel
+}
+
+func (r *rabbitmqStore) GetConnection() *amqp091.Connection {
+	return r.conn
 }
 
 func (r *rabbitmqStore) GetListeners() map[string]Listener {
@@ -173,14 +187,21 @@ func (r *rabbitmqStore) GetListeners() map[string]Listener {
 }
 
 func (r *rabbitmqStore) CloseAll() error {
-	err := r.channel.Close()
-	if err != nil {
-		return err
+	closedConn := r.conn.IsClosed()
+	closedChan := r.channel.IsClosed()
+
+	if !closedChan && !closedConn {
+		err := r.channel.Close()
+		if err != nil {
+			return err
+		}
 	}
 
-	err = r.conn.Close()
-	if err != nil {
-		return err
+	if !closedConn {
+		err := r.conn.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

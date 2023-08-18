@@ -2,7 +2,6 @@ package rabbitmqstore_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/brianvoe/gofakeit/v6"
@@ -15,26 +14,16 @@ import (
 
 var _ = Describe("Rabbitmqstore", func() {
 	var (
-		store      rabbitmqstore.Store
-		err        error
-		connection *amqp091.Connection
-		url        string
+		store rabbitmqstore.Store
+		url   string
 	)
 
 	BeforeEach(func() {
-		url = fmt.Sprintf(
-			"amqp://%s:%s@%s:%s/",
-			os.Getenv("RABBITMQ_DEFAULT_USER"),
-			os.Getenv("RABBITMQ_DEFAULT_PASS"),
-			os.Getenv("RABBITMQ_HOST"),
-			os.Getenv("RABBITMQ_PORT"),
-		)
-		connection, err = amqp091.Dial(url)
-		Expect(err).NotTo(HaveOccurred())
+		var err error
+		url = os.Getenv("RABBITMQ_ADDRESS")
 
 		options := rabbitmqstore.Options{
-			URL:        url,
-			Connection: connection,
+			URL: url,
 		}
 		store, err = rabbitmqstore.New(options)
 		Expect(err).NotTo(HaveOccurred())
@@ -64,7 +53,7 @@ var _ = Describe("Rabbitmqstore", func() {
 				received2 <- exchangeName2
 			}
 
-			_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+			_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
 				Exchange:   exchangeName1,
 				Queue:      queueName1,
 				RoutingKey: bindingKey1,
@@ -115,6 +104,7 @@ var _ = Describe("Rabbitmqstore", func() {
 				Handler:    func(d amqp091.Delivery) {},
 			}
 
+			var err error
 			listener1, err = store.RegisterListener(opts1)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -140,9 +130,8 @@ var _ = Describe("Rabbitmqstore", func() {
 			listener1.UpdateHandler(newHandler)
 
 			channel := store.GetChannel()
-			Expect(err).NotTo(HaveOccurred())
 
-			err = channel.PublishWithContext(context.TODO(), opts1.Exchange, opts1.RoutingKey, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte("x")})
+			err := channel.PublishWithContext(context.TODO(), opts1.Exchange, opts1.RoutingKey, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte("x")})
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(received).Should(Receive(&expectedMessage))
@@ -210,7 +199,7 @@ var _ = Describe("Rabbitmqstore", func() {
 	})
 
 	It("Declares exchanges", func() {
-		err = store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
+		err := store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
 			{
 				Exchange: gofakeit.UUID(),
 			},

@@ -127,44 +127,26 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 
 		go func() {
 			for {
-				reason, ok := <-r.channel.NotifyClose(make(chan *amqp091.Error))
+				_, ok := <-r.channel.NotifyClose(make(chan *amqp091.Error))
 
 				// Exits if the developer closes manually
 				if !ok && r.channel.IsClosed() {
-					logger.Debug("Channel closed")
-					r.channel.Close()
+					logger.Debug("Stopped listener")
 					break
 				}
 
-				logger.Debug("Unexpected channel closed", zap.Error(reason))
+				msgs, err := configureChannel(r.channel, opts)
 
-				for {
-					channel, err := r.conn.Channel()
-
-					if err == nil {
-						logger.Debug("Channel recreated successfully")
-
-						r.mutex.Lock()
-						r.channel = channel
-						r.mutex.Unlock()
-						break
-					}
-
-					logger.Debug("Failed to recreate the channel", zap.Error(err))
+				if err != nil {
+					logger.Debug("failed to reconfigure the channel", zap.Error(err))
+					return
 				}
-
-				msgs, _ := configureChannel(r.channel, opts)
 
 				consumeMessages(msgs)
 			}
 		}()
 
 		consumeMessages(msgs)
-
-		for d := range msgs {
-			logger.Debug("Received message", zap.String("Message", string(d.Body)))
-			handleFunc(d)
-		}
 	}()
 
 	return r.listeners[id], nil
