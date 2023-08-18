@@ -146,7 +146,7 @@ func New(opts Options) (Store, error) {
 		}
 		logger, err = config.Build()
 		if err != nil {
-			panic(fmt.Errorf("\n failed to build logger configurations for magicsockets: %s\n", err.Error()))
+			panic(fmt.Errorf("failed to build logger configurations for magicsockets: %s", err.Error()))
 		}
 	}
 	logger = logger.With(zap.String("RabbitMQ Store ID", uuid.New().String()))

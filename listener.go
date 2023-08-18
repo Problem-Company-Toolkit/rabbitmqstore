@@ -38,6 +38,25 @@ type Listener interface {
 	UpdateHandler(ListenerHandlerFunc)
 }
 
+func configureChannel(channel *amqp091.Channel, opts RegisterListenerOpts) (<-chan amqp091.Delivery, error) {
+	err := channel.ExchangeDeclare(opts.Exchange, opts.ExchangeType, false, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	q, err := channel.QueueDeclare(opts.Queue, true, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = channel.QueueBind(q.Name, opts.RoutingKey, opts.Exchange, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return channel.Consume(q.Name, "", false, false, false, false, nil)
+}
+
 func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -58,22 +77,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		opts.ExchangeType = "topic"
 	}
 
-	err := r.channel.ExchangeDeclare(opts.Exchange, opts.ExchangeType, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	q, err := r.channel.QueueDeclare(opts.Queue, true, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	err = r.channel.QueueBind(q.Name, opts.RoutingKey, opts.Exchange, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	msgs, err := r.channel.Consume(q.Name, "", false, false, false, false, nil)
+	msgs, err := configureChannel(r.channel, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +117,49 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		logger.Debug(
 			"Initializing listener",
 		)
+
+		consumeMessages := func(msgs <-chan amqp091.Delivery) {
+			for d := range msgs {
+				logger.Debug("Received message", zap.String("Message", string(d.Body)))
+				handleFunc(d)
+			}
+		}
+
+		go func() {
+			for {
+				reason, ok := <-r.channel.NotifyClose(make(chan *amqp091.Error))
+
+				// Exits if the developer closes manually
+				if !ok && r.channel.IsClosed() {
+					logger.Debug("Channel closed")
+					r.channel.Close()
+					break
+				}
+
+				logger.Debug("Unexpected channel closed", zap.Error(reason))
+
+				for {
+					channel, err := r.conn.Channel()
+
+					if err == nil {
+						logger.Debug("Channel recreated successfully")
+
+						r.mutex.Lock()
+						r.channel = channel
+						r.mutex.Unlock()
+						break
+					}
+
+					logger.Debug("Failed to recreate the channel", zap.Error(err))
+				}
+
+				msgs, _ := configureChannel(r.channel, opts)
+
+				consumeMessages(msgs)
+			}
+		}()
+
+		consumeMessages(msgs)
 
 		for d := range msgs {
 			logger.Debug("Received message", zap.String("Message", string(d.Body)))

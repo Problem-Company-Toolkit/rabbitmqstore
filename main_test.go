@@ -29,19 +29,19 @@ var _ = Describe("Rabbitmqstore", func() {
 			os.Getenv("RABBITMQ_HOST"),
 			os.Getenv("RABBITMQ_PORT"),
 		)
-		options := rabbitmqstore.Options{
-			URL: url,
-		}
-		store, err = rabbitmqstore.New(options)
+		connection, err = amqp091.Dial(url)
 		Expect(err).NotTo(HaveOccurred())
 
-		connection, err = amqp091.Dial(options.URL)
+		options := rabbitmqstore.Options{
+			URL:        url,
+			Connection: connection,
+		}
+		store, err = rabbitmqstore.New(options)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
 		store.CloseAll()
-		connection.Close()
 	})
 
 	Context("Registering different listeners for each exchange", func() {
@@ -154,6 +154,58 @@ var _ = Describe("Rabbitmqstore", func() {
 			listeners := store.GetListeners()
 			Expect(len(listeners)).To(Equal(1))
 			Expect(listeners[listener2.GetID()]).To(Equal(listener2))
+		})
+	})
+
+	Context("Channel error", func() {
+		It("should recreate channel correctly", func() {
+			queue := gofakeit.UUID()
+			exchange := gofakeit.Word()
+			routingKey := gofakeit.Word()
+
+			channel := store.GetChannel()
+
+			listenChan := make(chan struct{}, 1)
+			_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+				Exchange:     exchange,
+				Queue:        queue,
+				RoutingKey:   routingKey,
+				ExchangeType: amqp091.ExchangeTopic,
+				Handler: func(d amqp091.Delivery) {
+					defer func() {
+						listenChan <- struct{}{}
+					}()
+
+					d.Ack(false)
+					d.Ack(false)
+				},
+			})
+
+			if err != nil {
+				Fail(err.Error())
+				return
+			}
+
+			errChan := make(chan *amqp091.Error)
+
+			channel.NotifyClose(errChan)
+
+			connection.NotifyClose(errChan)
+
+			for i := 0; i < 2; i++ {
+				err := channel.PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
+					ContentType: "text/plain",
+					Body:        []byte("hello"),
+				})
+
+				if err != nil {
+					Fail(err.Error())
+					return
+				}
+			}
+
+			Eventually(errChan).Should(Receive())
+			Eventually(listenChan).MustPassRepeatedly(2).Should(Receive())
 		})
 	})
 
