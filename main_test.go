@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/brianvoe/gofakeit/v6"
+	rabbithole "github.com/michaelklishin/rabbit-hole"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rabbitmq/amqp091-go"
@@ -14,13 +15,20 @@ import (
 
 var _ = Describe("Rabbitmqstore", func() {
 	var (
-		store rabbitmqstore.Store
-		url   string
+		store   rabbitmqstore.Store
+		adminMq *rabbithole.Client
+		url     string
 	)
 
 	BeforeEach(func() {
 		var err error
 		url = os.Getenv("RABBITMQ_ADDRESS")
+
+		user := os.Getenv("RABBITMQ_DEFAULT_USER")
+		password := os.Getenv("RABBITMQ_DEFAULT_PASS")
+
+		adminMq, err = rabbithole.NewClient(os.Getenv("RABBITMQ_HTTP_ADDRESS"), user, password)
+		Expect(err).ShouldNot(HaveOccurred())
 
 		options := rabbitmqstore.Options{
 			URL: url,
@@ -146,55 +154,133 @@ var _ = Describe("Rabbitmqstore", func() {
 		})
 	})
 
-	Context("Channel error", func() {
-		It("should recreate channel correctly", func() {
-			queue := gofakeit.UUID()
-			exchange := gofakeit.Word()
-			routingKey := gofakeit.Word()
+	Context("Connection errors", func() {
+		Context("Channel error", func() {
+			It("should recreate channel correctly", func() {
+				queue := gofakeit.UUID()
+				exchange := gofakeit.Word()
+				routingKey := gofakeit.Word()
 
-			channel := store.GetChannel()
+				channel := store.GetChannel()
 
-			listenChan := make(chan struct{}, 1)
-			_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
-				Exchange:     exchange,
-				Queue:        queue,
-				RoutingKey:   routingKey,
-				ExchangeType: amqp091.ExchangeTopic,
-				Handler: func(d amqp091.Delivery) {
-					defer func() {
-						listenChan <- struct{}{}
-					}()
+				listenChan := make(chan struct{}, 1)
+				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+					Exchange:     exchange,
+					Queue:        queue,
+					RoutingKey:   routingKey,
+					ExchangeType: amqp091.ExchangeTopic,
+					Handler: func(d amqp091.Delivery) {
+						defer func() {
+							listenChan <- struct{}{}
+						}()
 
-					d.Ack(false)
-					d.Ack(false)
-				},
-			})
-
-			if err != nil {
-				Fail(err.Error())
-				return
-			}
-
-			errChan := make(chan *amqp091.Error)
-
-			channel.NotifyClose(errChan)
-
-			connection.NotifyClose(errChan)
-
-			for i := 0; i < 2; i++ {
-				err := channel.PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
-					ContentType: "text/plain",
-					Body:        []byte("hello"),
+						d.Ack(false)
+						d.Ack(false)
+					},
 				})
 
 				if err != nil {
 					Fail(err.Error())
 					return
 				}
-			}
 
-			Eventually(errChan).Should(Receive())
-			Eventually(listenChan).MustPassRepeatedly(2).Should(Receive())
+				errChan := make(chan *amqp091.Error)
+
+				channel.NotifyClose(errChan)
+
+				for i := 0; i < 2; i++ {
+					err := channel.PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
+						ContentType: "text/plain",
+						Body:        []byte("hello"),
+					})
+
+					if err != nil {
+						Fail(err.Error())
+						return
+					}
+				}
+
+				Eventually(errChan).Should(Receive())
+				Eventually(listenChan).MustPassRepeatedly(2).Should(Receive())
+			})
+		})
+
+		Context("Base connection error", func() {
+			It("should to reconnect automatically", func() {
+				queue := gofakeit.UUID()
+				exchange := gofakeit.Word()
+				routingKey := gofakeit.Word()
+
+				listenChan := make(chan struct{}, 1)
+				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+					Exchange:     exchange,
+					Queue:        queue,
+					RoutingKey:   routingKey,
+					ExchangeType: amqp091.ExchangeTopic,
+					Handler: func(d amqp091.Delivery) {
+						listenChan <- struct{}{}
+					},
+				})
+
+				if err != nil {
+					Fail(err.Error())
+					return
+				}
+
+				connErrChan := make(chan *amqp091.Error)
+
+				store.GetConnection().NotifyClose(connErrChan)
+
+				connectionInfoChan := make(chan []rabbithole.ConnectionInfo)
+				go func() {
+					var (
+						connectionInfo []rabbithole.ConnectionInfo
+						err            error
+					)
+
+					for len(connectionInfo) <= 0 {
+						connectionInfo, err = adminMq.ListConnections()
+						if err != nil {
+							Fail(err.Error())
+							return
+						}
+					}
+
+					connectionInfoChan <- connectionInfo
+				}()
+
+				connections := <-connectionInfoChan
+
+				for _, connection := range connections {
+					_, err := adminMq.CloseConnection(connection.Name)
+
+					if err != nil {
+						Fail(err.Error())
+						return
+					}
+				}
+
+				errChan := make(chan error, 1)
+
+				go func() {
+					for {
+						err := store.GetChannel().PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
+							ContentType: "text/plain",
+							Body:        []byte("hello"),
+						})
+
+						errChan <- err
+
+						if err == nil {
+							break
+						}
+					}
+				}()
+
+				Eventually(errChan).Should(Receive(BeNil()))
+				Eventually(connErrChan).Should(Receive())
+				Eventually(listenChan).Should(Receive())
+			})
 		})
 	})
 

@@ -13,12 +13,13 @@ type ListenerHandlerFunc = func(amqp091.Delivery)
 type listener struct {
 	mutex sync.Mutex
 
-	id           string
-	exchange     string
-	exchangeType string
-	queue        string
-	routingKey   string
-	handler      func(amqp091.Delivery)
+	id               string
+	exchange         string
+	exchangeType     string
+	queue            string
+	routingKey       string
+	recreateListener chan struct{}
+	handler          func(amqp091.Delivery)
 }
 
 type RegisterListenerOpts struct {
@@ -82,14 +83,17 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		return nil, err
 	}
 
+	recreateListener := make(chan struct{})
+
 	r.listeners[id] = &listener{
-		mutex:        sync.Mutex{},
-		id:           id,
-		exchange:     opts.Exchange,
-		exchangeType: opts.ExchangeType,
-		routingKey:   opts.RoutingKey,
-		queue:        opts.Queue,
-		handler:      opts.Handler,
+		mutex:            sync.Mutex{},
+		id:               id,
+		exchange:         opts.Exchange,
+		exchangeType:     opts.ExchangeType,
+		routingKey:       opts.RoutingKey,
+		queue:            opts.Queue,
+		recreateListener: recreateListener,
+		handler:          opts.Handler,
 	}
 
 	go func() {
@@ -101,6 +105,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 			}
 
 			r.listeners[id].mutex.Lock()
+			defer r.listeners[id].mutex.Unlock()
 
 			handler := r.listeners[id].handler
 			if handler != nil {
@@ -109,7 +114,6 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 
 			d.Ack(false)
 
-			r.listeners[id].mutex.Unlock()
 			return false
 		}
 
@@ -127,10 +131,10 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 
 		go func() {
 			for {
-				_, ok := <-r.channel.NotifyClose(make(chan *amqp091.Error))
+				_, ok := <-recreateListener
 
 				// Exits if the developer closes manually
-				if !ok && r.channel.IsClosed() {
+				if r.channel.IsClosed() || r.conn.IsClosed() || !ok {
 					logger.Debug("Stopped listener")
 					break
 				}
@@ -138,7 +142,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 				msgs, err := configureChannel(r.channel, opts)
 
 				if err != nil {
-					logger.Debug("failed to reconfigure the channel", zap.Error(err))
+					logger.Debug("Failed to reconfigure the channel", zap.Error(err))
 					return
 				}
 

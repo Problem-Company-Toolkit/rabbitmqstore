@@ -43,6 +43,7 @@ type rabbitmqStore struct {
 	logger    *zap.Logger
 	conn      *amqp091.Connection
 	channel   *amqp091.Channel
+	url       string
 	listeners map[string]*listener
 }
 
@@ -161,10 +162,12 @@ func New(opts Options) (Store, error) {
 		mutex:     sync.Mutex{},
 		logger:    logger,
 		conn:      conn,
+		url:       opts.URL,
 		channel:   channel,
 		listeners: make(map[string]*listener),
 	}
 
+	go store.handleConnection()
 	go store.handleChannel()
 
 	return store, nil
@@ -215,6 +218,7 @@ func (r *rabbitmqStore) CloseListener(id string) {
 	}
 
 	r.listeners[id].mutex.Lock()
+	close(r.listeners[id].recreateListener)
 	delete(r.listeners, id)
 }
 
