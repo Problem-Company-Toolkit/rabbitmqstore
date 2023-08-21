@@ -25,6 +25,12 @@ func (r *rabbitmqStore) Publish(opts PublishOpts) error {
 		zap.String("Body", string(opts.Message.Body)),
 	)
 
+	// Waits for finish state changes in store to send the message.
+	// It prevents trying to send a message while reconnecting.
+	for !r.mutex.TryLock() {
+	}
+	r.mutex.Unlock()
+
 	return r.channel.PublishWithContext(
 		opts.Context,
 		opts.Exchange,

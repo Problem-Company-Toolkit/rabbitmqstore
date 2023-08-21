@@ -309,6 +309,79 @@ var _ = Describe("Rabbitmqstore", func() {
 				Eventually(connErrChan).Should(Receive())
 				Eventually(listenChan).Should(Receive())
 			})
+
+			It("should to send messages without any issue", func() {
+				queue := gofakeit.UUID()
+				exchange := gofakeit.Word()
+				routingKey := gofakeit.Word()
+
+				listenChan := make(chan struct{}, 1)
+				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+					Exchange:     exchange,
+					Queue:        queue,
+					RoutingKey:   routingKey,
+					ExchangeType: amqp091.ExchangeTopic,
+					Handler: func(d amqp091.Delivery) {
+						listenChan <- struct{}{}
+					},
+				})
+
+				if err != nil {
+					Fail(err.Error())
+					return
+				}
+
+				connErrChan := make(chan *amqp091.Error)
+
+				store.GetConnection().NotifyClose(connErrChan)
+
+				connectionInfoChan := make(chan []rabbithole.ConnectionInfo)
+				go func() {
+					var (
+						connectionInfo []rabbithole.ConnectionInfo
+						err            error
+					)
+
+					for len(connectionInfo) <= 0 {
+						connectionInfo, err = adminMq.ListConnections()
+						if err != nil {
+							Fail(err.Error())
+							return
+						}
+					}
+
+					connectionInfoChan <- connectionInfo
+				}()
+
+				connections := <-connectionInfoChan
+
+				for _, connection := range connections {
+					_, err := adminMq.CloseConnection(connection.Name)
+
+					if err != nil {
+						Fail(err.Error())
+						return
+					}
+				}
+
+				totalMessages := gofakeit.IntRange(5, 20)
+
+				for i := 0; i < totalMessages; i++ {
+					err := store.Publish(rabbitmqstore.PublishOpts{
+						Context:    context.TODO(),
+						Exchange:   exchange,
+						RoutingKey: routingKey,
+						Mandatory:  false,
+						Immediate:  false,
+						Message: amqp091.Publishing{
+							ContentType: "text/plain",
+							Body:        []byte("hello"),
+						},
+					})
+
+					Expect(err).ShouldNot(HaveOccurred())
+				}
+			})
 		})
 	})
 

@@ -54,41 +54,50 @@ func (r *rabbitmqStore) handleChannel() {
 
 func (r *rabbitmqStore) handleConnection() {
 	for {
-		reason, ok := <-r.conn.NotifyClose(make(chan *amqp091.Error))
+		continueLoop := func() bool {
+			reason, ok := <-r.conn.NotifyClose(make(chan *amqp091.Error))
 
-		// Exits if closed manually
-		if !ok {
-			r.logger.Debug("Connection closed")
-			r.closeListeners()
+			r.mutex.Lock()
+			defer r.mutex.Unlock()
+
+			// Exits if closed manually
+			if !ok {
+				r.logger.Debug("Connection closed")
+				r.closeListeners()
+				return false
+			}
+
+			r.logger.Debug("Unexpected connection closed", zap.Error(reason))
+
+			for {
+				conn, err := amqp091.Dial(r.url)
+
+				if err != nil {
+					r.logger.Debug("Failed to reconnect", zap.Error(err))
+					continue
+				}
+
+				r.logger.Debug("Reconnected successfully")
+
+				channel, err := conn.Channel()
+
+				if err == nil {
+					r.logger.Debug("Recreated channel successfully")
+
+					r.conn = conn
+					r.channel = channel
+					r.notifyListeners()
+					break
+				}
+
+				r.logger.Debug("Failed to recreate lost channel")
+			}
+
+			return true
+		}()
+
+		if !continueLoop {
 			break
-		}
-
-		r.logger.Debug("Unexpected connection closed", zap.Error(reason))
-
-		for {
-			conn, err := amqp091.Dial(r.url)
-
-			if err != nil {
-				r.logger.Debug("Failed to reconnect", zap.Error(err))
-				continue
-			}
-
-			r.logger.Debug("Reconnected successfully")
-
-			channel, err := conn.Channel()
-
-			if err == nil {
-				r.logger.Debug("Recreated channel successfully")
-
-				r.mutex.Lock()
-				r.conn = conn
-				r.channel = channel
-				r.mutex.Unlock()
-				r.notifyListeners()
-				break
-			}
-
-			r.logger.Debug("Failed to recreate lost channel")
 		}
 	}
 }
