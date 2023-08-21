@@ -156,40 +156,45 @@ var _ = Describe("Rabbitmqstore", func() {
 
 	Context("Connection errors", func() {
 		Context("Channel error", func() {
-			It("should recreate channel correctly", func() {
-				queue := gofakeit.UUID()
-				exchange := gofakeit.Word()
-				routingKey := gofakeit.Word()
+			var (
+				listenChan chan struct{}
+				opts       rabbitmqstore.RegisterListenerOpts
+				channel    *amqp091.Channel
+				errChan    chan *amqp091.Error
+			)
 
-				channel := store.GetChannel()
-
-				listenChan := make(chan struct{}, 1)
-				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
-					Exchange:     exchange,
-					Queue:        queue,
-					RoutingKey:   routingKey,
+			BeforeEach(func() {
+				listenChan = make(chan struct{}, 1)
+				opts = rabbitmqstore.RegisterListenerOpts{
+					Exchange:     gofakeit.Word(),
+					Queue:        gofakeit.UUID(),
+					RoutingKey:   gofakeit.Word(),
 					ExchangeType: amqp091.ExchangeTopic,
 					Handler: func(d amqp091.Delivery) {
 						defer func() {
 							listenChan <- struct{}{}
 						}()
 
-						d.Ack(false)
-						d.Ack(false)
+						d.Ack(true)
+						d.Ack(true)
 					},
-				})
+				}
+
+				channel = store.GetChannel()
+
+				_, err := store.RegisterListener(opts)
 
 				if err != nil {
 					Fail(err.Error())
 					return
 				}
 
-				errChan := make(chan *amqp091.Error)
+				errChan = channel.NotifyClose(make(chan *amqp091.Error))
+			})
 
-				channel.NotifyClose(errChan)
-
+			It("should recreate channel correctly", func() {
 				for i := 0; i < 2; i++ {
-					err := channel.PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
+					err := channel.PublishWithContext(context.TODO(), opts.Exchange, opts.RoutingKey, false, false, amqp091.Publishing{
 						ContentType: "text/plain",
 						Body:        []byte("hello"),
 					})
@@ -200,8 +205,31 @@ var _ = Describe("Rabbitmqstore", func() {
 					}
 				}
 
-				Eventually(errChan).Should(Receive())
+				Eventually(errChan).Should(Receive(Not(BeNil())))
 				Eventually(listenChan).MustPassRepeatedly(2).Should(Receive())
+			})
+
+			It("should to publish messages without any issue", func() {
+				totalMessages := gofakeit.IntRange(5, 20)
+
+				for i := 0; i < totalMessages; i++ {
+					err := store.Publish(rabbitmqstore.PublishOpts{
+						Context:    context.TODO(),
+						Exchange:   opts.Exchange,
+						RoutingKey: opts.RoutingKey,
+						Mandatory:  false,
+						Immediate:  false,
+						Message: amqp091.Publishing{
+							ContentType: "text/plain",
+							Body:        []byte("hello"),
+						},
+					})
+
+					Expect(err).ShouldNot(HaveOccurred())
+				}
+
+				Eventually(errChan).Should(Receive(Not(BeNil())))
+				Eventually(listenChan).MustPassRepeatedly(totalMessages).Should(Receive())
 			})
 		})
 
