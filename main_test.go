@@ -235,28 +235,33 @@ var _ = Describe("Rabbitmqstore", func() {
 		})
 
 		Context("Base connection error", func() {
-			It("should to reconnect automatically", func() {
-				queue := gofakeit.UUID()
-				exchange := gofakeit.Word()
-				routingKey := gofakeit.Word()
+			var (
+				opts        rabbitmqstore.RegisterListenerOpts
+				listenChan  chan struct{}
+				connErrChan chan *amqp091.Error
+			)
 
-				listenChan := make(chan struct{}, 1)
-				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
-					Exchange:     exchange,
-					Queue:        queue,
-					RoutingKey:   routingKey,
+			BeforeEach(func() {
+				listenChan = make(chan struct{}, 1)
+
+				opts = rabbitmqstore.RegisterListenerOpts{
+					Exchange:     gofakeit.Word(),
+					Queue:        gofakeit.UUID(),
+					RoutingKey:   gofakeit.Word(),
 					ExchangeType: amqp091.ExchangeTopic,
 					Handler: func(d amqp091.Delivery) {
 						listenChan <- struct{}{}
 					},
-				})
+				}
+
+				_, err := store.RegisterListener(opts)
 
 				if err != nil {
 					Fail(err.Error())
 					return
 				}
 
-				connErrChan := store.GetConnection().NotifyClose(make(chan *amqp091.Error))
+				connErrChan = store.GetConnection().NotifyClose(make(chan *amqp091.Error))
 
 				connectionInfoChan := make(chan []rabbithole.ConnectionInfo)
 				go func() {
@@ -286,12 +291,14 @@ var _ = Describe("Rabbitmqstore", func() {
 						return
 					}
 				}
+			})
 
+			It("should to reconnect automatically", func() {
 				errChan := make(chan error, 1)
 
 				go func() {
 					for {
-						err := store.GetChannel().PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{
+						err := store.GetChannel().PublishWithContext(context.TODO(), opts.Exchange, opts.RoutingKey, false, false, amqp091.Publishing{
 							ContentType: "text/plain",
 							Body:        []byte("hello"),
 						})
@@ -310,66 +317,13 @@ var _ = Describe("Rabbitmqstore", func() {
 			})
 
 			It("should to send messages without any issue", func() {
-				queue := gofakeit.UUID()
-				exchange := gofakeit.Word()
-				routingKey := gofakeit.Word()
-
-				listenChan := make(chan struct{}, 1)
-				_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
-					Exchange:     exchange,
-					Queue:        queue,
-					RoutingKey:   routingKey,
-					ExchangeType: amqp091.ExchangeTopic,
-					Handler: func(d amqp091.Delivery) {
-						listenChan <- struct{}{}
-					},
-				})
-
-				if err != nil {
-					Fail(err.Error())
-					return
-				}
-
-				connErrChan := make(chan *amqp091.Error)
-
-				store.GetConnection().NotifyClose(connErrChan)
-
-				connectionInfoChan := make(chan []rabbithole.ConnectionInfo)
-				go func() {
-					var (
-						connectionInfo []rabbithole.ConnectionInfo
-						err            error
-					)
-
-					for len(connectionInfo) <= 0 {
-						connectionInfo, err = adminMq.ListConnections()
-						if err != nil {
-							Fail(err.Error())
-							return
-						}
-					}
-
-					connectionInfoChan <- connectionInfo
-				}()
-
-				connections := <-connectionInfoChan
-
-				for _, connection := range connections {
-					_, err := adminMq.CloseConnection(connection.Name)
-
-					if err != nil {
-						Fail(err.Error())
-						return
-					}
-				}
-
 				totalMessages := gofakeit.IntRange(5, 20)
 
 				for i := 0; i < totalMessages; i++ {
 					err := store.Publish(rabbitmqstore.PublishOpts{
 						Context:    context.TODO(),
-						Exchange:   exchange,
-						RoutingKey: routingKey,
+						Exchange:   opts.Exchange,
+						RoutingKey: opts.RoutingKey,
 						Mandatory:  false,
 						Immediate:  false,
 						Message: amqp091.Publishing{
