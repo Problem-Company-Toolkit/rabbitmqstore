@@ -167,8 +167,7 @@ func New(opts Options) (Store, error) {
 		listeners: make(map[string]*listener),
 	}
 
-	go store.handleConnection()
-	go store.handleChannel()
+	go store.handleReconnect()
 
 	return store, nil
 }
@@ -190,8 +189,13 @@ func (r *rabbitmqStore) GetListeners() map[string]Listener {
 }
 
 func (r *rabbitmqStore) CloseAll() error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	closedConn := r.conn.IsClosed()
 	closedChan := r.channel.IsClosed()
+
+	r.logger.Debug("Closing all connections")
 
 	if !closedChan && !closedConn {
 		err := r.channel.Close()

@@ -3,6 +3,7 @@ package rabbitmqstore_test
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/brianvoe/gofakeit/v6"
 	rabbithole "github.com/michaelklishin/rabbit-hole"
@@ -209,7 +210,7 @@ var _ = Describe("Rabbitmqstore", func() {
 				Eventually(listenChan).MustPassRepeatedly(2).Should(Receive())
 			})
 
-			It("should to publish messages without any issue", func() {
+			It("should to publish messages without any issue", func(ctx SpecContext) {
 				totalMessages := gofakeit.IntRange(5, 20)
 
 				for i := 0; i < totalMessages; i++ {
@@ -229,8 +230,8 @@ var _ = Describe("Rabbitmqstore", func() {
 				}
 
 				Eventually(errChan).Should(Receive(Not(BeNil())))
-				Eventually(listenChan).MustPassRepeatedly(totalMessages).Should(Receive())
-			})
+				Eventually(ctx, listenChan).MustPassRepeatedly(totalMessages).Should(Receive())
+			}, SpecTimeout(time.Second*5))
 		})
 
 		Context("Base connection error", func() {
@@ -255,9 +256,7 @@ var _ = Describe("Rabbitmqstore", func() {
 					return
 				}
 
-				connErrChan := make(chan *amqp091.Error)
-
-				store.GetConnection().NotifyClose(connErrChan)
+				connErrChan := store.GetConnection().NotifyClose(make(chan *amqp091.Error))
 
 				connectionInfoChan := make(chan []rabbithole.ConnectionInfo)
 				go func() {
@@ -381,6 +380,8 @@ var _ = Describe("Rabbitmqstore", func() {
 
 					Expect(err).ShouldNot(HaveOccurred())
 				}
+
+				Eventually(listenChan).MustPassRepeatedly(totalMessages).Should(Receive())
 			})
 		})
 	})

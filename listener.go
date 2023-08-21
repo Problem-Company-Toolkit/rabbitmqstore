@@ -133,17 +133,36 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 			for {
 				_, ok := <-recreateListener
 
-				// Exits if the developer closes manually
-				if r.channel.IsClosed() || r.conn.IsClosed() || !ok {
-					logger.Debug("Stopped listener")
+				msgs, continueLoop := func() (<-chan amqp091.Delivery, bool) {
+					r.mutex.Lock()
+					defer r.mutex.Unlock()
+
+					channelClosed := r.channel.IsClosed()
+					connClosed := r.conn.IsClosed()
+
+					// Exits if the developer closes manually
+					if channelClosed || connClosed || !ok {
+						logger.Debug("Stopped listener")
+						return nil, false
+					}
+
+					msgs, err := configureChannel(r.channel, opts)
+
+					if err != nil {
+						logger.Debug(
+							"Failed to reconfigure the channel",
+							zap.Error(err),
+							zap.Bool("channel closed", channelClosed),
+							zap.Bool("connection closed", connClosed),
+						)
+						return nil, false
+					}
+
+					return msgs, true
+				}()
+
+				if !continueLoop {
 					break
-				}
-
-				msgs, err := configureChannel(r.channel, opts)
-
-				if err != nil {
-					logger.Debug("Failed to reconfigure the channel", zap.Error(err))
-					return
 				}
 
 				consumeMessages(msgs)

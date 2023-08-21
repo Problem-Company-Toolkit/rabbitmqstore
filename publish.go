@@ -29,7 +29,7 @@ func (r *rabbitmqStore) Publish(opts PublishOpts) error {
 	// It prevents trying to send a message while reconnecting.
 	for !r.mutex.TryLock() {
 	}
-	r.mutex.Unlock()
+	defer r.mutex.Unlock()
 
 	return r.channel.PublishWithContext(
 		opts.Context,
