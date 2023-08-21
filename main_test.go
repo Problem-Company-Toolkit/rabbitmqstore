@@ -340,6 +340,45 @@ var _ = Describe("Rabbitmqstore", func() {
 		})
 	})
 
+	It("Publish messages", func() {
+		contentChan := make(chan string, 1)
+
+		opts := rabbitmqstore.RegisterListenerOpts{
+			Exchange:     gofakeit.Word(),
+			Queue:        gofakeit.UUID(),
+			RoutingKey:   gofakeit.Word(),
+			ExchangeType: amqp091.ExchangeTopic,
+			Handler: func(d amqp091.Delivery) {
+				contentChan <- string(d.Body)
+			},
+		}
+
+		_, err := store.RegisterListener(opts)
+
+		if err != nil {
+			Fail(err.Error())
+			return
+		}
+
+		message := gofakeit.Phrase()
+
+		err = store.Publish(rabbitmqstore.PublishOpts{
+			Context:    context.TODO(),
+			Exchange:   opts.Exchange,
+			RoutingKey: opts.RoutingKey,
+			Mandatory:  false,
+			Immediate:  false,
+			Message: amqp091.Publishing{
+				ContentType: "text/plain",
+				Body:        []byte(message),
+			},
+		})
+
+		Expect(err).ShouldNot(HaveOccurred())
+
+		Eventually(contentChan).Should(Receive(Equal(message)))
+	})
+
 	It("Declares exchanges", func() {
 		err := store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
 			{
