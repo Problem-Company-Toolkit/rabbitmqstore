@@ -13,6 +13,10 @@ import (
 	"github.com/problem-company-toolkit/rabbitmqstore"
 )
 
+func newFriendlyName() string {
+	return fmt.Sprintf("%s-%d", gofakeit.Word(), gofakeit.IntRange(1000000, 9999999))
+}
+
 var _ = Describe("Rabbitmqstore", func() {
 	var (
 		store      rabbitmqstore.Store
@@ -44,18 +48,104 @@ var _ = Describe("Rabbitmqstore", func() {
 		connection.Close()
 	})
 
+	Context("single exchange, many listeners", func() {
+		var (
+			exchange           string
+			queue              string
+			routingKeysList    []string
+			listenersMap       map[string]func(d amqp091.Delivery)
+			routingKeyChannels map[string]chan string
+
+			channel *amqp091.Channel
+		)
+
+		const ROUTING_KEYS_COUNT = 10
+
+		BeforeEach(func() {
+
+			exchange = newFriendlyName()
+			queue = newFriendlyName()
+
+			err := store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
+				{
+					Exchange: exchange,
+					Kind:     "topic",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			channel = store.GetChannel()
+			Expect(channel).ToNot(BeNil())
+
+			routingKeysList = []string{}
+			routingKeyChannels = map[string]chan string{}
+			listenersMap = map[string]func(d amqp091.Delivery){}
+
+			for i := 0; i < ROUTING_KEYS_COUNT; i++ {
+				routingKey := newFriendlyName()
+
+				routingKeysList = append(routingKeysList, routingKey)
+
+				routingKeyChannels[routingKey] = make(chan string, 1)
+
+				handler := func(d amqp091.Delivery) {
+					routingKeyChannels[routingKey] <- string(d.Body)
+				}
+				listenersMap[routingKey] = handler
+				_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+					Exchange:   exchange,
+					Queue:      queue,
+					RoutingKey: routingKey,
+					Handler:    listenersMap[routingKey],
+				})
+				Expect(err).ShouldNot(HaveOccurred())
+			}
+		})
+
+		It("triggers the correct listener when there are many", func() {
+			// Never the first, never the last.
+			randomIndex := gofakeit.IntRange(1, len(routingKeysList)-2)
+			routingKey := routingKeysList[randomIndex]
+
+			// Do it a bunch of times to be sure it can reliably do so.
+			const REPEAT_TIMES = 5
+
+			for i := 0; i < REPEAT_TIMES; i++ {
+				expectedValue := fmt.Sprintf("iteration: %d", i)
+
+				err = channel.PublishWithContext(context.TODO(), exchange, routingKey, false, false, amqp091.Publishing{ContentType: "text/plain", Body: []byte(expectedValue)})
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(routingKeyChannels[routingKey]).Should(Receive(&expectedValue))
+			}
+		})
+	})
+
 	Context("Registering different listeners for each exchange", func() {
+		var (
+			exchangeName1 string
+			queueName1    string
+			bindingKey1   string
+
+			exchangeName2 string
+			queueName2    string
+			bindingKey2   string
+		)
+
+		BeforeEach(func() {
+			exchangeName1 = newFriendlyName()
+			queueName1 = newFriendlyName()
+			bindingKey1 = newFriendlyName()
+
+			exchangeName2 = newFriendlyName()
+			queueName2 = newFriendlyName()
+			bindingKey2 = newFriendlyName()
+
+		})
+
 		It("should invoke the handler for the correct exchange", func() {
-			exchangeName1 := gofakeit.Word()
-			queueName1 := gofakeit.Word()
-			bindingKey1 := gofakeit.Word()
 			received1 := make(chan string, 1)
-
-			exchangeName2 := gofakeit.Word()
-			queueName2 := gofakeit.Word()
-			bindingKey2 := gofakeit.Word()
 			received2 := make(chan string, 1)
-
 			handler1 := func(d amqp091.Delivery) {
 				received1 <- exchangeName1
 			}
@@ -102,16 +192,16 @@ var _ = Describe("Rabbitmqstore", func() {
 
 		BeforeEach(func() {
 			opts1 = rabbitmqstore.RegisterListenerOpts{
-				Exchange:   gofakeit.Word(),
-				Queue:      gofakeit.Word(),
-				RoutingKey: gofakeit.Word(),
+				Exchange:   newFriendlyName(),
+				Queue:      newFriendlyName(),
+				RoutingKey: newFriendlyName(),
 				Handler:    func(d amqp091.Delivery) {},
 			}
 
 			opts2 = rabbitmqstore.RegisterListenerOpts{
-				Exchange:   gofakeit.Word(),
-				Queue:      gofakeit.Word(),
-				RoutingKey: gofakeit.Word(),
+				Exchange:   newFriendlyName(),
+				Queue:      newFriendlyName(),
+				RoutingKey: newFriendlyName(),
 				Handler:    func(d amqp091.Delivery) {},
 			}
 

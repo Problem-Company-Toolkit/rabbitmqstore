@@ -63,7 +63,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		return nil, err
 	}
 
-	q, err := r.channel.QueueDeclare(opts.Queue, true, false, false, false, nil)
+	q, err := r.channel.QueueDeclare(id, true, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		return nil, err
 	}
 
-	msgs, err := r.channel.Consume(q.Name, "", false, false, false, false, nil)
+	msgs, err := r.channel.Consume(q.Name, id, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
