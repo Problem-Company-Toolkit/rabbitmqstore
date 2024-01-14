@@ -3,7 +3,6 @@ package rabbitmqstore_test
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/brianvoe/gofakeit/v6"
 	. "github.com/onsi/ginkgo/v2"
@@ -13,39 +12,24 @@ import (
 	"github.com/problem-company-toolkit/rabbitmqstore"
 )
 
-func newFriendlyName() string {
-	return fmt.Sprintf("%s-%d", gofakeit.Word(), gofakeit.IntRange(1000000, 9999999))
-}
-
 var _ = Describe("Rabbitmqstore", func() {
 	var (
-		store      rabbitmqstore.Store
-		err        error
-		connection *amqp091.Connection
-		url        string
+		store rabbitmqstore.Store
+		err   error
+		url   string
 	)
 
 	BeforeEach(func() {
-		url = fmt.Sprintf(
-			"amqp://%s:%s@%s:%s/",
-			os.Getenv("RABBITMQ_DEFAULT_USER"),
-			os.Getenv("RABBITMQ_DEFAULT_PASS"),
-			os.Getenv("RABBITMQ_HOST"),
-			os.Getenv("RABBITMQ_PORT"),
-		)
+		url = getUrl()
 		options := rabbitmqstore.Options{
 			URL: url,
 		}
 		store, err = rabbitmqstore.New(options)
 		Expect(err).NotTo(HaveOccurred())
-
-		connection, err = amqp091.Dial(options.URL)
-		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
 		store.CloseAll()
-		connection.Close()
 	})
 
 	Context("single exchange, many listeners", func() {
@@ -62,7 +46,6 @@ var _ = Describe("Rabbitmqstore", func() {
 		const ROUTING_KEYS_COUNT = 10
 
 		BeforeEach(func() {
-
 			exchange = newFriendlyName()
 			queue = newFriendlyName()
 
@@ -141,6 +124,19 @@ var _ = Describe("Rabbitmqstore", func() {
 			queueName2 = newFriendlyName()
 			bindingKey2 = newFriendlyName()
 
+			err := store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
+				{
+					Exchange: exchangeName1,
+					Durable:  false,
+					Kind:     "topic",
+				},
+				{
+					Exchange: exchangeName2,
+					Durable:  false,
+					Kind:     "topic",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should invoke the handler for the correct exchange", func() {
@@ -204,6 +200,18 @@ var _ = Describe("Rabbitmqstore", func() {
 				RoutingKey: newFriendlyName(),
 				Handler:    func(d amqp091.Delivery) {},
 			}
+
+			err = store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
+				{
+					Exchange: opts1.Exchange,
+					Durable:  false,
+				},
+				{
+					Exchange: opts2.Exchange,
+					Durable:  false,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
 
 			listener1, err = store.RegisterListener(opts1)
 			Expect(err).NotTo(HaveOccurred())

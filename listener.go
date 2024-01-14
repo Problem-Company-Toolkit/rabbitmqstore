@@ -58,26 +58,6 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		opts.ExchangeType = "topic"
 	}
 
-	err := r.channel.ExchangeDeclare(opts.Exchange, opts.ExchangeType, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	q, err := r.channel.QueueDeclare(id, true, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	err = r.channel.QueueBind(q.Name, opts.RoutingKey, opts.Exchange, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	msgs, err := r.channel.Consume(q.Name, id, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	r.listeners[id] = &listener{
 		mutex:        sync.Mutex{},
 		id:           id,
@@ -88,39 +68,39 @@ func (r *rabbitmqStore) RegisterListener(opts RegisterListenerOpts) (Listener, e
 		handler:      opts.Handler,
 	}
 
+	err := r.setupListener(r.listeners[id])
+	if err != nil {
+		return nil, err
+	}
+
+	return r.listeners[id], nil
+}
+
+func (r *rabbitmqStore) setupListener(l *listener) error {
+	q, err := r.channel.QueueDeclare(l.id, true, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to declare queue: %v", err)
+	}
+
+	err = r.channel.QueueBind(q.Name, l.routingKey, l.exchange, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to bind queue: %v", err)
+	}
+
+	msgs, err := r.channel.Consume(q.Name, l.id, false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start consuming: %v", err)
+	}
+
 	go func() {
-		// Abstracted into its own function so that we can get away with using defer
-		// Returns true in order to break the listen.
-		handleFunc := func(d amqp091.Delivery) bool {
-			if _, ok := r.listeners[id]; !ok {
-				return true
-			}
-
-			r.listeners[id].mutex.Lock()
-
-			handler := r.listeners[id].handler
-			if handler != nil {
-				handler(d)
-			}
-
-			d.Ack(false)
-
-			r.listeners[id].mutex.Unlock()
-			return false
-		}
-
-		var logger = r.logger.With(zap.String("Listener ID", id))
-		logger.Debug(
-			"Initializing listener",
-		)
-
+		var logger = r.logger.With(zap.String("Listener ID", l.id))
 		for d := range msgs {
 			logger.Debug("Received message", zap.String("Message", string(d.Body)))
-			handleFunc(d)
+			l.handler(d)
 		}
 	}()
 
-	return r.listeners[id], nil
+	return nil
 }
 
 func (l *listener) GetExchange() string {

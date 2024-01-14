@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rabbitmq/amqp091-go"
@@ -30,6 +31,8 @@ type Store interface {
 	GetChannel() *amqp091.Channel
 
 	Publish(PublishOpts) error
+
+	Reconnect() error
 }
 
 type rabbitmqStore struct {
@@ -38,6 +41,9 @@ type rabbitmqStore struct {
 	conn      *amqp091.Connection
 	channel   *amqp091.Channel
 	listeners map[string]*listener
+
+	connStr    string
+	connClosed chan *amqp091.Error
 }
 
 type Options struct {
@@ -151,13 +157,72 @@ func New(opts Options) (Store, error) {
 	}
 	logger = logger.With(zap.String("RabbitMQ Store ID", uuid.New().String()))
 
-	return &rabbitmqStore{
+	store := &rabbitmqStore{
 		mutex:     sync.Mutex{},
 		logger:    logger,
 		conn:      conn,
 		channel:   channel,
 		listeners: make(map[string]*listener),
-	}, nil
+
+		connStr:    opts.URL,
+		connClosed: make(chan *amqp091.Error),
+	}
+
+	store.conn.NotifyClose(store.connClosed)
+	go store.handleAbruptClose()
+
+	return store, nil
+}
+
+func (r *rabbitmqStore) handleAbruptClose() {
+	for {
+		err := <-r.connClosed
+
+		if err != nil { // connection closed abruptly
+			reconnectSuccessful := false
+			for !reconnectSuccessful {
+				err := r.Reconnect()
+				if err == nil {
+					reconnectSuccessful = true
+				} else {
+					// Log the error and wait before retrying
+					r.logger.Error("Failed to reconnect to RabbitMQ", zap.Error(err))
+					time.Sleep(10 * time.Second)
+				}
+			}
+		}
+	}
+}
+
+func (r *rabbitmqStore) Reconnect() error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	conn, err := amqp091.Dial(r.connStr)
+	if err != nil {
+		return err
+	}
+
+	r.conn = conn
+	channel, err := conn.Channel()
+	if err != nil {
+		return err
+	}
+
+	r.channel = channel
+	r.reinitializeListeners()
+	r.conn.NotifyClose(r.connClosed)
+
+	return nil
+}
+
+func (r *rabbitmqStore) reinitializeListeners() {
+	for id, lst := range r.listeners {
+		err := r.setupListener(lst)
+		if err != nil {
+			r.logger.Error("Failed to reinitialize listener", zap.String("id", id), zap.Error(err))
+		}
+	}
 }
 
 func (r *rabbitmqStore) GetChannel() *amqp091.Channel {
@@ -173,16 +238,11 @@ func (r *rabbitmqStore) GetListeners() map[string]Listener {
 }
 
 func (r *rabbitmqStore) CloseAll() error {
+	close(r.connClosed)
 	err := r.channel.Close()
 	if err != nil {
 		return err
 	}
-
-	err = r.conn.Close()
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -200,6 +260,7 @@ func (r *rabbitmqStore) CloseListener(id string) {
 type DeclareExchangeOpts struct {
 	// Required.
 	Exchange string
+	Durable  bool
 
 	// Defaults to topic.
 	Kind string
