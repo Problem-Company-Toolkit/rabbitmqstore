@@ -94,7 +94,10 @@ var _ = Describe("Reconnect", func() {
 			Eventually(messageSent).Should(Receive())
 
 			// Channel was restored
-			Eventually(store.GetChannel().IsClosed(), ACCEPTABLE_DELAY).Should(BeFalse())
+			Eventually(func(g Gomega) {
+				isOpen := !store.GetChannel().IsClosed()
+				g.Expect(isOpen).To(BeTrue())
+			}, ACCEPTABLE_DELAY).Should(Succeed())
 		})
 	})
 })

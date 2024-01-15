@@ -203,12 +203,14 @@ func (r *rabbitmqStore) Reconnect() error {
 	if err != nil {
 		return err
 	}
+	r.logger.Debug("Reconnection: Acquired Connection")
 
 	r.conn = conn
 	channel, err := conn.Channel()
 	if err != nil {
 		return err
 	}
+	r.logger.Debug("Reconnection: Acquired Channel", zap.Bool("Is Closed?", channel.IsClosed()))
 
 	r.channel = channel
 	r.reinitializeListeners()
@@ -219,6 +221,7 @@ func (r *rabbitmqStore) Reconnect() error {
 }
 
 func (r *rabbitmqStore) reinitializeListeners() {
+	r.logger.Debug("Reinitializing listeners")
 	for id, lst := range r.listeners {
 		err := r.setupListener(lst)
 		if err != nil {
