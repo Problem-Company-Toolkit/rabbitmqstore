@@ -56,6 +56,7 @@ jobs:
         RABBITMQ_DEFAULT_PASS: pass
         RABBITMQ_HOST: localhost
         RABBITMQ_PORT: 5672
+        RABBITMQSTORE_LOG_LEVEL: debug
 
     - name: Repetitive Tests
       run: make test-repetitions
@@ -64,3 +65,4 @@ jobs:
         RABBITMQ_DEFAULT_PASS: pass
         RABBITMQ_HOST: localhost
         RABBITMQ_PORT: 5672
+        RABBITMQSTORE_LOG_LEVEL: debug
