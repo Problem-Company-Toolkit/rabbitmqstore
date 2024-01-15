@@ -1,6 +1,7 @@
 package rabbitmqstore_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,6 +14,8 @@ import (
 var _ = Describe("Reconnect", func() {
 	var (
 		store rabbitmqstore.Store
+
+		exchangeName string
 	)
 
 	BeforeEach(func() {
@@ -23,10 +26,10 @@ var _ = Describe("Reconnect", func() {
 		store, err = rabbitmqstore.New(options)
 		Expect(err).NotTo(HaveOccurred())
 
-		exchange1 := newFriendlyName()
+		exchangeName = newFriendlyName()
 		err = store.DeclareExchanges([]rabbitmqstore.DeclareExchangeOpts{
 			{
-				Exchange: exchange1,
+				Exchange: exchangeName,
 				Durable:  false,
 				Kind:     "topic",
 			},
@@ -34,7 +37,7 @@ var _ = Describe("Reconnect", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		_, err = store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
-			Exchange: exchange1,
+			Exchange: exchangeName,
 			Handler: func(d amqp091.Delivery) {
 				d.Ack(false)
 			},
@@ -42,15 +45,52 @@ var _ = Describe("Reconnect", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("should reconnect", func() {
-		err := store.CloseAll()
-		Expect(err).NotTo(HaveOccurred())
-		time.Sleep(time.Second * 1)
+	Context("Reconnect", func() {
+		It("should reconnect", func() {
+			err := store.CloseAll()
+			Expect(err).NotTo(HaveOccurred())
+			time.Sleep(time.Second * 1)
 
-		Expect(store.GetChannel().IsClosed()).To(BeTrue())
+			Expect(store.GetChannel().IsClosed()).To(BeTrue())
 
-		err = store.Reconnect()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(store.GetChannel().IsClosed()).To(BeFalse())
+			// Make sure the reconnect logic isn't triggering a new connection after an explicit close.
+			Eventually(store.GetChannel().IsClosed(), time.Second*3).ShouldNot(BeFalse())
+
+			err = store.Reconnect()
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(store.GetChannel().IsClosed()).Should(BeFalse())
+		})
+	})
+
+	Context("An exception occurs", func() {
+		It("should reconnect", func() {
+			messageSent := make(chan interface{})
+			_, err := store.RegisterListener(rabbitmqstore.RegisterListenerOpts{
+				Exchange:   exchangeName,
+				RoutingKey: "test-with-exception-occurs",
+				Handler: func(d amqp091.Delivery) {
+					// Double acknowledge triggers an exception that closes the channel
+					d.Ack(false)
+					d.Ack(false)
+					messageSent <- true
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			err = store.Publish(rabbitmqstore.PublishOpts{
+				Exchange:   exchangeName,
+				RoutingKey: "test-with-exception-occurs",
+				Context:    context.TODO(),
+				Message: amqp091.Publishing{
+					Body: []byte("test-with-exception-occurs"),
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			// Crash occurred
+			Eventually(messageSent).Should(Receive())
+
+			// Channel was restored
+			Eventually(store.GetChannel().IsClosed()).Should(BeFalse())
+		})
 	})
 })

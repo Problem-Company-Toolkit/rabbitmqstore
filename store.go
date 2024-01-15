@@ -152,7 +152,7 @@ func New(opts Options) (Store, error) {
 		}
 		logger, err = config.Build()
 		if err != nil {
-			panic(fmt.Errorf("\n failed to build logger configurations for magicsockets: %s\n", err.Error()))
+			panic(fmt.Errorf("failed to build logger configurations for magicsockets: %s", err.Error()))
 		}
 	}
 	logger = logger.With(zap.String("RabbitMQ Store ID", uuid.New().String()))
@@ -168,7 +168,7 @@ func New(opts Options) (Store, error) {
 		connClosed: make(chan *amqp091.Error),
 	}
 
-	store.conn.NotifyClose(store.connClosed)
+	store.channel.NotifyClose(store.connClosed)
 	go store.handleAbruptClose()
 
 	return store, nil
@@ -177,7 +177,6 @@ func New(opts Options) (Store, error) {
 func (r *rabbitmqStore) handleAbruptClose() {
 	for {
 		err := <-r.connClosed
-
 		if err != nil { // connection closed abruptly
 			reconnectSuccessful := false
 			for !reconnectSuccessful {
@@ -198,6 +197,8 @@ func (r *rabbitmqStore) Reconnect() error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
+	r.logger.Debug("Reconnecting to RabbitMQ")
+
 	conn, err := amqp091.Dial(r.connStr)
 	if err != nil {
 		return err
@@ -211,7 +212,8 @@ func (r *rabbitmqStore) Reconnect() error {
 
 	r.channel = channel
 	r.reinitializeListeners()
-	r.conn.NotifyClose(r.connClosed)
+
+	r.channel.NotifyClose(r.connClosed)
 
 	return nil
 }
@@ -238,7 +240,7 @@ func (r *rabbitmqStore) GetListeners() map[string]Listener {
 }
 
 func (r *rabbitmqStore) CloseAll() error {
-	close(r.connClosed)
+	r.connClosed = nil
 	err := r.channel.Close()
 	if err != nil {
 		return err
