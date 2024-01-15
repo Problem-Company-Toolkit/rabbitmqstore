@@ -9,3 +9,6 @@ test-dependencies:
 
 test:
 	@ginkgo -r
+
+test-repetitions:
+	@ginkgo -p --repeat 100

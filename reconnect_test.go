@@ -18,6 +18,10 @@ var _ = Describe("Reconnect", func() {
 		exchangeName string
 	)
 
+	const (
+		ACCEPTABLE_DELAY = time.Second * 10
+	)
+
 	BeforeEach(func() {
 		var err error
 		options := rabbitmqstore.Options{
@@ -54,11 +58,11 @@ var _ = Describe("Reconnect", func() {
 			Expect(store.GetChannel().IsClosed()).To(BeTrue())
 
 			// Make sure the reconnect logic isn't triggering a new connection after an explicit close.
-			Eventually(store.GetChannel().IsClosed(), time.Second*3).ShouldNot(BeFalse())
+			Eventually(store.GetChannel().IsClosed(), ACCEPTABLE_DELAY).ShouldNot(BeFalse())
 
 			err = store.Reconnect()
 			Expect(err).NotTo(HaveOccurred())
-			Eventually(store.GetChannel().IsClosed()).Should(BeFalse())
+			Eventually(store.GetChannel().IsClosed(), ACCEPTABLE_DELAY).Should(BeFalse())
 		})
 	})
 
@@ -90,7 +94,7 @@ var _ = Describe("Reconnect", func() {
 			Eventually(messageSent).Should(Receive())
 
 			// Channel was restored
-			Eventually(store.GetChannel().IsClosed()).Should(BeFalse())
+			Eventually(store.GetChannel().IsClosed(), ACCEPTABLE_DELAY).Should(BeFalse())
 		})
 	})
 })
